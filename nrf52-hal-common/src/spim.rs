@@ -1,11 +1,15 @@
 //! HAL interface to the SPIM peripheral
 //!
 //! See product specification, chapter 31.
+use embedded_hal::blocking::spi::Transfer;
 use core::ops::Deref;
 use core::mem::transmute;
 use core::sync::atomic::{compiler_fence, Ordering::AcqRel};
-use embedded_hal::spi::FullDuplex;
-use nb;
+use crate::hal::spi::FullDuplex;
+
+
+#[macro_use(block)]
+use nb::{block};
 
 use crate::target::{
     spim0,
@@ -23,7 +27,6 @@ use crate::gpio::{
     Output,
     PushPull,
 };
-
 
 pub trait SpimExt : Deref<Target=spim0::RegisterBlock> + Sized {
     fn constrain(self, pins: Pins) -> Spim<Self>;
@@ -59,10 +62,28 @@ impl_spim_ext!(
 /// - The over-read character is hardcoded to `0`.
 pub struct Spim<T>(T);
 
+impl<T> Transfer<u8> for Spim<T> where T: SpimExt
+
+// impl<T> Transfer<u8> for S<T> where
+//      T: SpimExt,
+//      S: FullDuplex<u8>,
+{
+   type Error = SPIError;
+
+    fn transfer<'w>(&mut self, words: &'w mut [u8]) -> Result<&'w [u8], SPIError> {
+        for word in words.iter_mut() {
+            block!(self.send(word.clone()))?;
+            *word = block!(FullDuplex::read(self))?;
+        }
+
+        Ok(words)
+    }
+}
+
 impl<T> FullDuplex<u8> for Spim<T> where T: SpimExt
 {
-    type Error = Error;
-    fn read(&mut self) -> Result<u8, nb::Error<Error>>{
+    type Error = SPIError;
+    fn read(&mut self) -> nb::Result<u8, Self::Error>{
         unsafe{
             //  Spi0 and Spim0 is the same hw on the same address, they are split in register map
             //  but will work fine together This will cast a spim0 to spi0 to access registers.
@@ -74,7 +95,7 @@ impl<T> FullDuplex<u8> for Spim<T> where T: SpimExt
             }
         }
     }
-    fn send(&mut self, word: u8) -> Result<(), nb::Error<Error>>{
+    fn send(&mut self, word: u8) -> nb::Result<(), Self::Error>{
 
         unsafe {
             //  Spi0 and Spim0 is the same hw on the same address, they are split in register map
@@ -149,16 +170,16 @@ impl<T> Spim<T> where T: SpimExt {
         tx_buffer  : &[u8],
         rx_buffer  : &mut [u8],
     )
-        -> Result<(), Error>
+        -> Result<(), SPIError>
     {
         // TODO: some targets have a maxcnt whose size is larger
         // than a u8, so this length check is overly restrictive
         // and could be lifted.
         if tx_buffer.len() > u8::max_value() as usize {
-            return Err(Error::TxBufferTooLong);
+            return Err(SPIError::TxBufferTooLong);
         }
         if rx_buffer.len() > u8::max_value() as usize {
-            return Err(Error::RxBufferTooLong);
+            return Err(SPIError::RxBufferTooLong);
         }
 
         // Pull chip select pin high, which is the inactive state
@@ -219,10 +240,10 @@ impl<T> Spim<T> where T: SpimExt {
         chip_select.set_high();
 
         if self.0.txd.amount.read().bits() != tx_buffer.len() as u32 {
-            return Err(Error::Transmit);
+            return Err(SPIError::Transmit);
         }
         if self.0.rxd.amount.read().bits() != rx_buffer.len() as u32 {
-            return Err(Error::Receive);
+            return Err(SPIError::Receive);
         }
 
         // Conservative compiler fence to prevent optimizations that do not
@@ -242,12 +263,12 @@ impl<T> Spim<T> where T: SpimExt {
         chip_select: &mut P0_Pin<Output<PushPull>>,
         tx_buffer  : &[u8],
     )
-        -> Result<(), Error>
+        -> Result<(), SPIError>
     {
         // This is overly restrictive. See:
         // https://github.com/nrf-rs/nrf52/issues/17
         if tx_buffer.len() > u8::max_value() as usize {
-            return Err(Error::TxBufferTooLong);
+            return Err(SPIError::TxBufferTooLong);
         }
 
         // Pull chip select pin high, which is the inactive state
@@ -297,7 +318,7 @@ impl<T> Spim<T> where T: SpimExt {
         chip_select.set_high();
 
         if self.0.txd.amount.read().bits() != tx_buffer.len() as u32 {
-            return Err(Error::Transmit);
+            return Err(SPIError::Transmit);
         }
 
         // Conservative compiler fence to prevent optimizations that do not
@@ -327,7 +348,7 @@ pub struct Pins {
 
 
 #[derive(Debug)]
-pub enum Error {
+pub enum SPIError {
     TxBufferTooLong,
     RxBufferTooLong,
     Transmit,
