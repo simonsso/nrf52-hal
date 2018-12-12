@@ -2,13 +2,17 @@
 //!
 //! See product specification, chapter 31.
 use core::ops::Deref;
+use core::mem::transmute;
 use core::sync::atomic::{compiler_fence, Ordering::AcqRel};
+use embedded_hal::spi::FullDuplex;
+use nb;
 
 use crate::target::{
     spim0,
     SPIM0,
     SPIM1,
     SPIM2,
+    spi0,
 };
 
 use crate::prelude::*;
@@ -32,7 +36,7 @@ macro_rules! impl_spim_ext {
                 fn constrain(self, pins: Pins) -> Spim<Self> {
                     Spim::new(self, pins)
                 }
-            }
+            }          
         )*
     }
 }
@@ -55,6 +59,39 @@ impl_spim_ext!(
 /// - The over-read character is hardcoded to `0`.
 pub struct Spim<T>(T);
 
+impl<T> FullDuplex<u8> for Spim<T> where T: SpimExt
+{
+    type Error = Error;
+    fn read(&mut self) -> Result<u8, nb::Error<Error>>{
+        type Target = spi0::RegisterBlock;
+        
+        let x:*const spi0::RegisterBlock = unsafe { transmute(self.0.deref()) }  ;
+        
+        let spi: spi0::RegisterBlock = *x;
+
+
+        if spi.events_ready== 1 {
+            Err(nb::Error::WouldBlock)
+        }else{
+            Ok(spi.rxd)
+        }
+    }
+    fn send(&mut self, word: u8) -> Result<(), nb::Error<Error>>{
+        type Target = spi0::RegisterBlock;
+
+        //  Spi0 and Spim0 is the same hw on the same address, they are split in register map
+        //  but will work fine together This will cast a spim0 to spi0 to access registers.
+        let spi:*const spi0::RegisterBlock = unsafe { transmute( self.0.deref()) }  ;
+
+        if spi.ready()== 0 {
+            Err(nb::Error::WouldBlock)
+        }else{
+            spi.txd().write(|w|{unsafe{ w.txd.bits(word)}});
+            Ok(())
+        }
+    }
+
+}
 impl<T> Spim<T> where T: SpimExt {
     pub fn new(spim: T, pins: Pins) -> Self {
         // Select pins

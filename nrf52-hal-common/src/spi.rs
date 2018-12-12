@@ -68,7 +68,7 @@ impl<T> Spi<T> where T: SpiExt {
         // the pins through the raw peripheral API. All of the following is
         // safe, as we own the pins now and have exclusive access to their
         // registers.
-        for &pin in &[pins.scl.pin, pins.sda.pin] {
+        for &pin in &[pins.sck.pin, pins.mosi.pin, pins.miso.pin] {
             unsafe { &*P0::ptr() }.pin_cnf[pin as usize].write(|w|
                 w
                     .dir().input()
@@ -115,7 +115,7 @@ impl<T> Spi<T> where T: SpiExt {
     /// Write to an SPI slave
     ///
     /// The buffer must have a length of at most 255 bytes.
-    pub fn write(&mut self,
+    pub fn write_dma(&mut self,
         address: u8,
         buffer:  &[u8],
     )
@@ -181,7 +181,7 @@ impl<T> Spi<T> where T: SpiExt {
     }
 
     /// Read from an I2C slave
-    pub fn read(&mut self,
+    pub fn read_dma(&mut self,
         address: u8,
         buffer:  &mut [u8],
     )
