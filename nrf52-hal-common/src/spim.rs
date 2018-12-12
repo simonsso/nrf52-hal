@@ -63,32 +63,31 @@ impl<T> FullDuplex<u8> for Spim<T> where T: SpimExt
 {
     type Error = Error;
     fn read(&mut self) -> Result<u8, nb::Error<Error>>{
-        type Target = spi0::RegisterBlock;
-        
-        let x:*const spi0::RegisterBlock = unsafe { transmute(self.0.deref()) }  ;
-        
-        let spi: spi0::RegisterBlock = *x;
-
-
-        if spi.events_ready== 1 {
-            Err(nb::Error::WouldBlock)
-        }else{
-            Ok(spi.rxd)
+        unsafe{
+            //  Spi0 and Spim0 is the same hw on the same address, they are split in register map
+            //  but will work fine together This will cast a spim0 to spi0 to access registers.
+            let spi:*const spi0::RegisterBlock = transmute(self.0.deref());
+            if (*spi).events_ready.read().bits() == 1 {
+                Err(nb::Error::WouldBlock)
+            }else{
+                Ok(((*spi).rxd.read().bits() & 0xFF )as u8)
+            }
         }
     }
     fn send(&mut self, word: u8) -> Result<(), nb::Error<Error>>{
-        type Target = spi0::RegisterBlock;
 
-        //  Spi0 and Spim0 is the same hw on the same address, they are split in register map
-        //  but will work fine together This will cast a spim0 to spi0 to access registers.
-        let spi:*const spi0::RegisterBlock = unsafe { transmute( self.0.deref()) }  ;
-
-        if spi.ready()== 0 {
-            Err(nb::Error::WouldBlock)
-        }else{
-            spi.txd().write(|w|{unsafe{ w.txd.bits(word)}});
-            Ok(())
+        unsafe {
+            //  Spi0 and Spim0 is the same hw on the same address, they are split in register map
+            //  but will work fine together This will cast a spim0 to spi0 to access registers.
+            let spi:*const spi0::RegisterBlock =  transmute(self.0.deref())   ;
+            if (*spi).events_ready.read().bits() == 0 {
+                Err(nb::Error::WouldBlock)
+            }else{
+                (*spi).txd.write(|w|{ w.txd().bits(word)});
+                Ok(())
+            }
         }
+
     }
 
 }
