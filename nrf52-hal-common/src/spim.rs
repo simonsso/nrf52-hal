@@ -88,9 +88,13 @@ impl<T> FullDuplex<u8> for Spim<T> where T: SpimExt
             //  Spi0 and Spim0 is the same hw on the same address, they are split in register map
             //  but will work fine together This will cast a spim0 to spi0 to access registers.
             let spi:*const spi0::RegisterBlock = transmute(self.0.deref());
-            if (*spi).events_ready.read().bits() == 1 {
+            if (*spi).events_ready.read().bits() == 0 {
+                // when no data is avilable
+                compiler_fence(AcqRel);
                 Err(nb::Error::WouldBlock)
             }else{
+                (*spi).events_ready.write(|w|{ w});
+                compiler_fence(AcqRel);
                 Ok(((*spi).rxd.read().bits() & 0xFF )as u8)
             }
         }
@@ -101,12 +105,9 @@ impl<T> FullDuplex<u8> for Spim<T> where T: SpimExt
             //  Spi0 and Spim0 is the same hw on the same address, they are split in register map
             //  but will work fine together This will cast a spim0 to spi0 to access registers.
             let spi:*const spi0::RegisterBlock =  transmute(self.0.deref())   ;
-            if (*spi).events_ready.read().bits() == 0 {
-                Err(nb::Error::WouldBlock)
-            }else{
-                (*spi).txd.write(|w|{ w.txd().bits(word)});
-                Ok(())
-            }
+            (*spi).txd.write(|w|{ w.txd().bits(word)});
+            compiler_fence(AcqRel);
+            Ok(())
         }
 
     }
@@ -130,7 +131,7 @@ impl<T> Spim<T> where T: SpimExt {
 
         // Enable SPIM instance
         spim.enable.write(|w|
-            w.enable().enabled()
+            unsafe {w.bits(1)}
         );
 
         // Set to SPI mode 0
