@@ -1,7 +1,6 @@
 //! HAL interface to the SPIM peripheral
 //!
 //! See product specification, chapter 31.
-use embedded_hal::blocking::spi::Transfer;
 use core::ops::Deref;
 use core::sync::atomic::{compiler_fence, Ordering::SeqCst};
 use core::cmp::min;
@@ -56,7 +55,7 @@ impl_spim_ext!(
 /// - The over-read character is hardcoded to `0`.
 pub struct Spim<T>(T);
 
-impl<T> Transfer<u8> for Spim<T> where T: SpimExt
+impl<T> embedded_hal::blocking::spi::Transfer<u8> for Spim<T> where T: SpimExt
 {
    type Error = Error;
 
@@ -76,7 +75,27 @@ impl<T> Transfer<u8> for Spim<T> where T: SpimExt
         Ok(words)
     }
 }
+impl<T> embedded_hal::blocking::spi::Write<u8> for Spim<T> where T: SpimExt
+{
+   type Error = Error;
 
+    fn write<'w>(&mut self, words: &'w [u8]) -> Result<(), Error> {
+        let mut offset:usize = 0;
+        while offset < words.len() {
+            let datalen = min(easy_dma_size(), words.len()  - offset);
+            let dataptr = offset + (words.as_ptr() as usize);
+            offset += easy_dma_size();
+
+            // setup spi dma tx buffer and 0 for read buffer length
+            self.do_spi_dma_transfer(dataptr as u32,datalen as u32,0,0,|_|{})?;
+
+            // Conservative compiler fence to prevent optimizations that do not
+            // take in to account DMA
+            compiler_fence(SeqCst);
+        }
+        Ok(())
+    }
+}
 impl<T> Spim<T> where T: SpimExt {
     pub fn new(spim: T, pins: Pins) -> Self {
         // Select pins
