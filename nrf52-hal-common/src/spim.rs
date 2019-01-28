@@ -80,20 +80,43 @@ impl<T> embedded_hal::blocking::spi::Write<u8> for Spim<T> where T: SpimExt
    type Error = Error;
 
     fn write<'w>(&mut self, words: &'w [u8]) -> Result<(), Error> {
-        let mut offset:usize = 0;
-        while offset < words.len() {
-            let datalen = min(easy_dma_size(), words.len()  - offset);
-            let dataptr = offset + (words.as_ptr() as usize);
-            offset += easy_dma_size();
+        let p = words.as_ptr() as usize;
+        if p<0x2000_0000 && p>0x2FFF_FFFF {
+            let mut offset:usize = 0;
+            while offset < words.len() {
+                let datalen = min(easy_dma_size(), words.len()  - offset);
+                let dataptr = offset + (words.as_ptr() as usize);
+                offset += easy_dma_size();
 
-            // setup spi dma tx buffer and 0 for read buffer length
-            self.do_spi_dma_transfer(dataptr as u32,datalen as u32,0,0,|_|{})?;
+                // setup spi dma tx buffer and 0 for read buffer length
+                self.do_spi_dma_transfer(dataptr as u32,datalen as u32,0,0,|_|{})?;
 
-            // Conservative compiler fence to prevent optimizations that do not
-            // take in to account DMA
-            compiler_fence(SeqCst);
+                // Conservative compiler fence to prevent optimizations that do not
+                // take in to account DMA
+                compiler_fence(SeqCst);
+            }
+        }else{
+            // Force copy from flash mode.
+            let mut buffer: [u8;256] = [0;256];
+            let mut offset:usize = 0;
+            while offset < words.len() {
+                let datalen = min(255, words.len()  - offset);
+                // let dataptr = offset + (words.as_ptr() as usize);
+                for i in 0..datalen{
+                    buffer[i] = words[offset+i];
+                }
+                offset += 255;
+
+                // setup spi dma tx buffer and 0 for read buffer length
+                self.do_spi_dma_transfer(buffer.as_ptr() as u32,datalen as u32,0,0,|_|{})?;
+
+                // Conservative compiler fence to prevent optimizations that do not
+                // take in to account DMA
+                compiler_fence(SeqCst);
+            }
         }
         Ok(())
+
     }
 }
 impl<T> Spim<T> where T: SpimExt {
@@ -150,6 +173,10 @@ impl<T> Spim<T> where T: SpimExt {
             ) -> Result<(), Error>
             where CSFun: FnMut(bool)
     {
+        // Check If buffer is in readable memory
+        if tx_data_ptr < 0x2000_0000 || tx_data_ptr > 0x2FFF_FFFF  {
+            return Err(Error::DMABufferInUnaccessableMemory)
+        }
         // Conservative compiler fence to prevent optimizations that do not
         // take in to account actions by DMA. The fence has been placed here,
         // before any DMA action has started
@@ -346,6 +373,7 @@ pub struct Pins {
 pub enum Error {
     TxBufferTooLong,
     RxBufferTooLong,
+    DMABufferInUnaccessableMemory,
     Transmit,
     Receive,
 }
