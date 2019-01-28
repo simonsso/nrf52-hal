@@ -81,6 +81,8 @@ impl<T> embedded_hal::blocking::spi::Write<u8> for Spim<T> where T: SpimExt
 
     fn write<'w>(&mut self, words: &'w [u8]) -> Result<(), Error> {
         let p = words.as_ptr() as usize;
+        // Mask on segment where Data RAM is located on nrf52840 and nrf52832
+        // Upper limit is choosen to entire area where DataRam can be placed
         if p<0x2000_0000 && p>0x2FFF_FFFF {
             let mut offset:usize = 0;
             while offset < words.len() {
@@ -97,16 +99,17 @@ impl<T> embedded_hal::blocking::spi::Write<u8> for Spim<T> where T: SpimExt
             }
         }else{
             // Force copy from flash mode.
+
+            // DMA Block buffer capped at 256 even if MCU support more. (nrf52832 limits to 255)
+            let blocksize = min(easy_dma_size(),256); 
             let mut buffer: [u8;256] = [0;256];
             let mut offset:usize = 0;
             while offset < words.len() {
-                let datalen = min(255, words.len()  - offset);
-                // let dataptr = offset + (words.as_ptr() as usize);
+                let datalen = min(blocksize, words.len()  - offset);
                 for i in 0..datalen{
                     buffer[i] = words[offset+i];
                 }
-                offset += 255;
-
+                offset += blocksize;
                 // setup spi dma tx buffer and 0 for read buffer length
                 self.do_spi_dma_transfer(buffer.as_ptr() as u32,datalen as u32,0,0,|_|{})?;
 
@@ -192,7 +195,8 @@ impl<T> Spim<T> where T: SpimExt {
             ) -> Result<(), Error>
             where CSFun: FnMut(bool)
     {
-        // Check If buffer is in readable memory
+        // Check If buffer is in data RAM, compiler sometimes put static data
+        // in flash this area is not accessable by EasyDMA
         if tx_data_ptr < 0x2000_0000 || tx_data_ptr > 0x2FFF_FFFF  {
             return Err(Error::DMABufferInUnaccessableMemory)
         }
