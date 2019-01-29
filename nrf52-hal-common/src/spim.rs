@@ -12,7 +12,7 @@ use crate::target::{
     SPIM2,
 };
 
-use crate::target_constants::EASY_DMA_SIZE;
+use crate::target_constants::{EASY_DMA_SIZE,SRAM_LOWER,SRAM_UPPER,FORCE_COPY_BUFFER_SIZE};
 use crate::prelude::*;
 use crate::gpio::{
     p0::P0_Pin,
@@ -83,12 +83,12 @@ impl<T> embedded_hal::blocking::spi::Write<u8> for Spim<T> where T: SpimExt
         let p = words.as_ptr() as usize;
         // Mask on segment where Data RAM is located on nrf52840 and nrf52832
         // Upper limit is choosen to entire area where DataRam can be placed
-        if p<0x2000_0000 && p>0x2FFF_FFFF {
+        if SRAM_LOWER <= p && p < SRAM_UPPER {
             let mut offset:usize = 0;
             while offset < words.len() {
-                let datalen = min(easy_dma_size(), words.len()  - offset);
+                let datalen = min(EASY_DMA_SIZE, words.len()  - offset);
                 let dataptr = offset + (words.as_ptr() as usize);
-                offset += easy_dma_size();
+                offset += EASY_DMA_SIZE;
 
                 // setup spi dma tx buffer and 0 for read buffer length
                 self.do_spi_dma_transfer(dataptr as u32,datalen as u32,0,0,|_|{})?;
@@ -99,10 +99,8 @@ impl<T> embedded_hal::blocking::spi::Write<u8> for Spim<T> where T: SpimExt
             }
         }else{
             // Force copy from flash mode.
-
-            // DMA Block buffer capped at 256 even if MCU support more. (nrf52832 limits to 255)
-            let blocksize = min(easy_dma_size(),256); 
-            let mut buffer: [u8;256] = [0;256];
+            let blocksize = min(EASY_DMA_SIZE,FORCE_COPY_BUFFER_SIZE); 
+            let mut buffer:[u8;FORCE_COPY_BUFFER_SIZE] = [0;FORCE_COPY_BUFFER_SIZE];
             let mut offset:usize = 0;
             while offset < words.len() {
                 let datalen = min(blocksize, words.len()  - offset);
@@ -197,7 +195,7 @@ impl<T> Spim<T> where T: SpimExt {
     {
         // Check If buffer is in data RAM, compiler sometimes put static data
         // in flash this area is not accessable by EasyDMA
-        if tx_data_ptr < 0x2000_0000 || tx_data_ptr > 0x2FFF_FFFF  {
+        if (tx_data_ptr as usize) < SRAM_LOWER || tx_data_ptr as usize >= SRAM_UPPER {
             return Err(Error::DMABufferInUnaccessableMemory)
         }
         // Conservative compiler fence to prevent optimizations that do not
