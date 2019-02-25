@@ -5,7 +5,7 @@ If all tests pass all four Led (Led1 to Led4) will light up, in case of error on
 
 
 ## HW connections
-Pin     Connecton   
+Pin     Connecton
 P0.24   SPIclk
 P0.23   MOSI
 P0.22   MISO
