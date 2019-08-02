@@ -1,18 +1,18 @@
 [package]
-name = "rtfm-demo"
+name = "twi-ssd1306"
 version = "0.1.0"
-authors = ["James Munns <james.munns@ferrous-systems.com>"]
+authors = ["James Waples <james@wapl.es>", "Ruben Paz <me@ruben.io>"]
 edition = "2018"
 
 [dependencies]
-cortex-m-rtfm = "0.4.3"
+cortex-m-rt = "0.6.5"
+ssd1306 = "0.2.4"
+embedded-graphics = "0.4.7"
 panic-semihosting = "0.5.1"
-cortex-m-semihosting = "0.3.3"
 
-[dependencies.nrf52810-hal]
-version = "0.8.0"
-path = "../../nrf52810-hal"
-optional = true
+[dependencies.embedded-hal]
+features = ["unproven"]
+version = "0.2"
 
 [dependencies.nrf52832-hal]
 version = "0.8.0"
@@ -25,7 +25,6 @@ path = "../../nrf52840-hal"
 optional = true
 
 [features]
-52810 = ["nrf52810-hal"]
 52832 = ["nrf52832-hal"]
 52840 = ["nrf52840-hal"]
 default = ["52832"]

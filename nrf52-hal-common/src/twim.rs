@@ -26,29 +26,6 @@ use crate::target_constants::EASY_DMA_SIZE;
 
 pub use crate::target::twim0::frequency::FREQUENCYW as Frequency;
 
-pub trait TwimExt: Deref<Target=twim0::RegisterBlock> + Sized {
-    fn constrain(self, pins: Pins, frequency: Frequency)
-        -> Twim<Self>;
-}
-
-macro_rules! impl_twim_ext {
-    ($($twim:ty,)*) => {
-        $(
-            impl TwimExt for $twim {
-                fn constrain(self, pins: Pins, frequency: Frequency)
-                    -> Twim<Self>
-                {
-                    Twim::new(self, pins, frequency)
-                }
-            }
-        )*
-    }
-}
-
-impl_twim_ext!(TWIM0,);
-
-#[cfg(any(feature = "52832", feature = "52840"))]
-impl_twim_ext!(TWIM1,);
 
 /// Interface to a TWIM instance
 ///
@@ -61,7 +38,7 @@ impl_twim_ext!(TWIM1,);
 /// section 6.1.2 for nRF52840).
 pub struct Twim<T>(T);
 
-impl<T> Twim<T> where T: TwimExt {
+impl<T> Twim<T> where T: Instance {
     pub fn new(twim: T, pins: Pins, frequency: Frequency) -> Self {
         // The TWIM peripheral requires the pins to be in a mode that is not
         // exposed through the GPIO API, and might it might not make sense to
@@ -372,6 +349,31 @@ impl<T> Twim<T> where T: TwimExt {
     }
 }
 
+/// Implementation of embedded_hal::blocking::i2c Traits
+
+impl<T> embedded_hal::blocking::i2c::Write for Twim<T> where T: Instance {
+    type Error = Error;
+
+    fn write<'w>(&mut self, addr: u8, bytes: &'w [u8]) -> Result<(), Error> {
+        self.write(addr, bytes)
+    }
+}
+
+impl<T> embedded_hal::blocking::i2c::Read for Twim<T> where T: Instance {
+    type Error = Error;
+
+    fn read<'w>(&mut self, addr: u8, bytes: &'w mut [u8]) -> Result<(), Error> {
+        self.read(addr, bytes)
+    }
+}
+
+impl<T> embedded_hal::blocking::i2c::WriteRead for Twim<T> where T: Instance {
+    type Error = Error;
+
+    fn write_read<'w>(&mut self, addr: u8, bytes:&'w[u8], buffer: &'w mut [u8]) -> Result<(), Error> {
+        self.write_then_read(addr, bytes, buffer)
+    }
+}
 
 /// The pins used by the TWIN peripheral
 ///
@@ -392,3 +394,12 @@ pub enum Error {
     Transmit,
     Receive,
 }
+
+
+/// Implemented by all TWIM instances
+pub trait Instance: Deref<Target=twim0::RegisterBlock> {}
+
+impl Instance for TWIM0 {}
+
+#[cfg(any(feature = "52832", feature = "52840"))]
+impl Instance for TWIM1 {}

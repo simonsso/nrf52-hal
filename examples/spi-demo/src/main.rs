@@ -14,7 +14,7 @@ use nrf52832_hal::gpio;
 use nrf52832_hal::gpio::p0::*;
 use nrf52832_hal::gpio::Level;
 use nrf52832_hal::gpio::*;
-use nrf52832_hal::prelude::GpioExt;
+use nrf52832_hal::spim::Spim;
 
 /// SPIM demonstation code.
 /// connect a resistor between pin 22 and 23 on to feed MOSI direct back to MISO
@@ -24,7 +24,7 @@ use nrf52832_hal::prelude::GpioExt;
 #[entry]
 fn main() -> ! {
     let p = nrf52832_hal::nrf52832_pac::Peripherals::take().unwrap();
-    let port0 = p.P0.split();
+    let port0 = p0::Parts::new(p.P0);
 
     let cs: P0_21<gpio::Output<PushPull>> = port0.p0_21.into_push_pull_output(Level::Low);
 
@@ -48,7 +48,8 @@ fn main() -> ! {
         miso: Some(spimiso),
         mosi: Some(spimosi),
     };
-    let mut spi = p.SPIM2.constrain(
+    let mut spi = Spim::new(
+        p.SPIM2,
         pins,
         nrf52832_hal::spim::Frequency::K500,
         nrf52832_hal::spim::MODE_0,
@@ -59,7 +60,6 @@ fn main() -> ! {
     // Read only test vector
     let test_vec1 = *reference_data;
     let mut readbuf = [0; 255];
-    use nrf52832_hal::spim::SpimExt;
 
     // This will write 8 bytes, then shift out ORC
 

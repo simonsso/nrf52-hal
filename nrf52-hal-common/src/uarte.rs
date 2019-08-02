@@ -22,7 +22,7 @@ use crate::gpio::{
     Input,
     Floating,
 };
-use crate::timer::Timer;
+use crate::timer::{self, Timer};
 
 // Re-export SVD variants to allow user to directly set values
 pub use crate::target::uarte0::{
@@ -30,15 +30,6 @@ pub use crate::target::uarte0::{
     config::PARITYW as Parity,
 };
 
-pub trait UarteExt: Deref<Target = uarte0::RegisterBlock> + Sized {
-    fn constrain(self, pins: Pins, parity: Parity, baudrate: Baudrate) -> Uarte<Self>;
-}
-
-impl UarteExt for UARTE0 {
-    fn constrain(self, pins: Pins, parity: Parity, baudrate: Baudrate) -> Uarte<Self> {
-        Uarte::new(self, pins, parity, baudrate)
-    }
-}
 
 /// Interface to a UARTE instance
 ///
@@ -50,7 +41,7 @@ impl UarteExt for UARTE0 {
 ///     - nrf52840: Section 6.1.2
 pub struct Uarte<T>(T);
 
-impl<T> Uarte<T> where T: UarteExt {
+impl<T> Uarte<T> where T: Instance {
     pub fn new(uarte: T, mut pins: Pins, parity: Parity, baudrate: Baudrate) -> Self {
         // Select pins
         uarte.psel.rxd.write(|w| {
@@ -216,7 +207,7 @@ impl<T> Uarte<T> where T: UarteExt {
         rx_buffer: &mut [u8],
         timer: &mut Timer<I>,
         cycles: u32
-    ) -> Result<(), Error> where I: TimerExt
+    ) -> Result<(), Error> where I: timer::Instance
     {
         // Start the read
         self.start_read(rx_buffer)?;
@@ -236,12 +227,17 @@ impl<T> Uarte<T> where T: UarteExt {
             }
         }
 
+        if !event_complete {
+            // Cancel the reception if it did not complete until now
+            self.cancel_read();
+        }
+
         // Cleanup, even in the error case
         self.finalize_read();
 
         let bytes_read = self.0.rxd.amount.read().bits() as usize;
 
-        if timeout_occured {
+        if timeout_occured && !event_complete {
             return Err(Error::Timeout(bytes_read));
         }
 
@@ -304,13 +300,35 @@ impl<T> Uarte<T> where T: UarteExt {
         compiler_fence(SeqCst);
     }
 
+    /// Stop an unfinished UART read transaction and flush FIFO to DMA buffer
+    fn cancel_read(&mut self) {
+        // Stop reception
+        self.0.tasks_stoprx.write(|w|
+            unsafe { w.bits(1) });
+
+        // Wait for the reception to have stopped
+        while self.0.events_rxto.read().bits() == 0 {}
+
+        // Reset the event flag
+        self.0.events_rxto.write(|w| w);
+
+        // Ask UART to flush FIFO to DMA buffer
+        self.0.tasks_flushrx.write(|w|
+            unsafe { w.bits(1) });
+
+        // Wait for the flush to complete.
+        while self.0.events_endrx.read().bits() == 0 {}
+
+        // The event flag itself is later reset by `finalize_read`.
+    }
+
     /// Return the raw interface to the underlying UARTE peripheral
     pub fn free(self) -> T {
         self.0
     }
 }
 
-impl<T> fmt::Write for Uarte<T> where T: UarteExt {
+impl<T> fmt::Write for Uarte<T> where T: Instance {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         // Copy all data into an on-stack buffer so we never try to EasyDMA from
         // flash
@@ -340,3 +358,8 @@ pub enum Error {
     Receive,
     Timeout(usize),
 }
+
+
+pub trait Instance: Deref<Target = uarte0::RegisterBlock> {}
+
+impl Instance for UARTE0 {}

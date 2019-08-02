@@ -1,27 +1,22 @@
-//! Board support crate for the Nordic nRF52840-DK
+//! Board support crate for the Nordic nRF52-DK
+//! https://www.nordicsemi.com/Software-and-Tools/Development-Kits/nRF52-DK
 //!
-//! This crate is in early development. UARTE, SPIM and TWI should be functiona,
-//! but might miss some features.
 #![no_std]
 
-pub use cortex_m;
-pub use cortex_m_rt;
-pub use embedded_hal;
-pub use nrf52840_hal as hal;
+extern crate cortex_m;
+
+extern crate cortex_m_rt;
+pub extern crate nrf52832_hal;
 
 /// Exports traits that are usually needed when using this crate
 pub mod prelude {
-    pub use nrf52840_hal::prelude::*;
+    pub use nrf52832_hal::prelude::*;
 }
 
-// TODO: Maybe we want a debug module like in the DWM1001-Dev implementation.
-// pub mod debug;
-
-use nrf52840_hal::{
+use nrf52832_hal::{
     prelude::*,
     gpio::{
         p0,
-        p1,
         Pin,
         Floating,
         Input,
@@ -30,16 +25,10 @@ use nrf52840_hal::{
         PullUp,
         Level,
     },
-    nrf52840_pac::{
+    nrf52832_pac::{
         self as nrf52,
         CorePeripherals,
         Peripherals,
-    },
-    spim::{
-        self,
-        Frequency,
-        MODE_0,
-        Spim
     },
     uarte::{
         self,
@@ -49,23 +38,19 @@ use nrf52840_hal::{
     },
 };
 
-/// Provides access to all features of the nRF52840-DK board
+/// Provides access to all features of the nRF52-DK board
 #[allow(non_snake_case)]
 pub struct Board {
-    /// The nRF52's pins which are not otherwise occupied on the nRF52840-DK
+    /// The nRF52's pins which are not otherwise occupied on the nRF52-DK
     pub pins: Pins,
 
-    /// The nRF52840-DK UART which is wired to the virtual USB CDC port
+    /// The nRF52-DK UART which is wired to the virtual USB CDC port
     pub cdc: Uarte<nrf52::UARTE0>,
 
-    /// The nRF52840-DK SPI which is wired to the SPI flash
-    pub flash: Spim<nrf52::SPIM2>,
-    pub flash_cs: Pin<Output<PushPull>>,
-
-    /// The LEDs on the nRF52840-DK board
+    /// The LEDs on the nRF52-DK board
     pub leds: Leds,
 
-    /// The buttons on the nRF52840-DK board
+    /// The buttons on the nRF52-DK board
     pub buttons: Buttons,
 
     pub nfc: NFC,
@@ -111,9 +96,6 @@ pub struct Board {
 
     /// nRF52 peripheral: UICR
     pub UICR: nrf52::UICR,
-
-    /// nRF52 peripheral: ACL
-    pub ACL: nrf52::ACL,
 
     /// nRF52 peripheral: POWER
     pub POWER: nrf52::POWER,
@@ -284,7 +266,7 @@ pub struct Board {
 impl Board {
     /// Take the peripherals safely
     ///
-    /// This method will return an instance of `nRF52840DK` the first time it is
+    /// This method will return an instance of `nRF52DK` the first time it is
     /// called. It will return only `None` on subsequent calls.
     pub fn take() -> Option<Self> {
         Some(Self::new(
@@ -295,16 +277,16 @@ impl Board {
 
     /// Steal the peripherals
     ///
-    /// This method produces an instance of `nRF52840DK`, regardless of whether
+    /// This method produces an instance of `nRF52DK`, regardless of whether
     /// another instance was create previously.
     ///
     /// # Safety
     ///
-    /// This method can be used to create multiple instances of `nRF52840DK`. Those
+    /// This method can be used to create multiple instances of `nRF52DK`. Those
     /// instances can interfere with each other, causing all kinds of unexpected
     /// behavior and circumventing safety guarantees in many ways.
     ///
-    /// Always use `nRF52840DK::take`, unless you really know what you're doing.
+    /// Always use `nRF52DK::take`, unless you really know what you're doing.
     pub unsafe fn steal() -> Self {
         Self::new(
             CorePeripherals::steal(),
@@ -314,24 +296,13 @@ impl Board {
 
     fn new(cp: CorePeripherals, p: Peripherals) -> Self {
         let pins0 = p0::Parts::new(p.P0);
-        let pins1 = p1::Parts::new(p.P1);
 
-        // The nRF52840-DK has an 64MB SPI flash on board which can be interfaced through SPI or Quad SPI.
-        // As for now, only the normal SPI mode is available, so we are using this for the interface.
-        let flash_spim = Spim::new(p.SPIM2, spim::Pins {
-            sck : pins0.p0_19.into_push_pull_output(Level::Low).degrade(),
-            mosi: Some(pins0.p0_20.into_push_pull_output(Level::Low).degrade()),
-            miso: Some(pins0.p0_21.into_floating_input().degrade()),
-        }, Frequency::K500, MODE_0, 0);
-
-        let flash_cs = pins0.p0_17.into_push_pull_output(Level::High).degrade();
-
-        // The nRF52840-DK features an USB CDC port.
+        // The nRF52-DK features an USB CDC port.
         // It features HWFC but does not have to use it.
         // It can transmit a flexible baudrate of up to 1Mbps.
         let cdc_uart = Uarte::new(
-            p.UARTE0,
-            uarte::Pins {
+                p.UARTE0,
+                uarte::Pins {
                 txd: pins0.p0_06.into_push_pull_output(Level::High).degrade(),
                 rxd: pins0.p0_08.into_floating_input().degrade(),
                 cts: Some(pins0.p0_07.into_floating_input().degrade()),
@@ -343,51 +314,39 @@ impl Board {
 
         Board {
             cdc: cdc_uart,
-            flash: flash_spim,
-            flash_cs: flash_cs,
 
             pins: Pins {
+                _RESET: pins0.p0_21,
+                P0_02 : pins0.p0_02,
                 P0_03 : pins0.p0_03,
                 P0_04 : pins0.p0_04,
-                _RESET : pins0.p0_18,
-                P0_22 : pins0.p0_22,
-                P0_23 : pins0.p0_23,
-                P0_26 : pins0.p0_26,
-                P0_27 : pins0.p0_27,
+                P0_11 : pins0.p0_11,
+                P0_12 : pins0.p0_12,
+                P0_24 : pins0.p0_24,
+                P0_25 : pins0.p0_25,
                 P0_28 : pins0.p0_28,
                 P0_29 : pins0.p0_29,
                 P0_30 : pins0.p0_30,
                 P0_31 : pins0.p0_31,
-                P1_00 : pins1.p1_00,
-                P1_01 : pins1.p1_01,
-                P1_02 : pins1.p1_02,
-                P1_03 : pins1.p1_03,
-                P1_04 : pins1.p1_04,
-                P1_05 : pins1.p1_05,
-                P1_06 : pins1.p1_06,
-                P1_07 : pins1.p1_07,
-                P1_08 : pins1.p1_08,
-                P1_09 : pins1.p1_09,
-                P1_10 : pins1.p1_10,
-                P1_11 : pins1.p1_11,
-                P1_12 : pins1.p1_12,
-                P1_13 : pins1.p1_13,
-                P1_14 : pins1.p1_14,
-                P1_15 : pins1.p1_15,
+
+                P0_22 : pins0.p0_22,
+                P0_23 : pins0.p0_23,
+                P0_26 : pins0.p0_26,
+                P0_27 : pins0.p0_27,
             },
 
             leds: Leds {
-                led_1: Led::new(pins0.p0_13.degrade()),
-                led_2: Led::new(pins0.p0_14.degrade()),
-                led_3: Led::new(pins0.p0_15.degrade()),
-                led_4: Led::new(pins0.p0_16.degrade()),
+                led_1: Led::new(pins0.p0_17.degrade()),
+                led_2: Led::new(pins0.p0_18.degrade()),
+                led_3: Led::new(pins0.p0_19.degrade()),
+                led_4: Led::new(pins0.p0_20.degrade()),
             },
 
             buttons: Buttons {
-                button_1: Button::new(pins0.p0_11.degrade()),
-                button_2: Button::new(pins0.p0_12.degrade()),
-                button_3: Button::new(pins0.p0_24.degrade()),
-                button_4: Button::new(pins0.p0_25.degrade()),
+                button_1: Button::new(pins0.p0_13.degrade()),
+                button_2: Button::new(pins0.p0_14.degrade()),
+                button_3: Button::new(pins0.p0_15.degrade()),
+                button_4: Button::new(pins0.p0_16.degrade()),
             },
 
             nfc: NFC {
@@ -412,7 +371,6 @@ impl Board {
             // nRF52 peripherals
             FICR  : p.FICR,
             UICR  : p.UICR,
-            ACL   : p.ACL,
             POWER : p.POWER,
             CLOCK : p.CLOCK,
             RADIO : p.RADIO,
@@ -474,55 +432,48 @@ impl Board {
 }
 
 
-/// The nRF52 pins that are available on the nRF52840DK
+/// The nRF52 pins that are available on the nRF52DK
 #[allow(non_snake_case)]
 pub struct Pins {
+    _RESET   : p0::P0_21<Input<Floating>>,
+
     pub P0_03: p0::P0_03<Input<Floating>>,
     pub P0_04: p0::P0_04<Input<Floating>>,
-       _RESET: p0::P0_18<Input<Floating>>,
-    pub P0_22: p0::P0_22<Input<Floating>>,
-    pub P0_23: p0::P0_23<Input<Floating>>,
-    pub P0_26: p0::P0_26<Input<Floating>>,
-    pub P0_27: p0::P0_27<Input<Floating>>,
     pub P0_28: p0::P0_28<Input<Floating>>,
     pub P0_29: p0::P0_29<Input<Floating>>,
     pub P0_30: p0::P0_30<Input<Floating>>,
     pub P0_31: p0::P0_31<Input<Floating>>,
-    pub P1_00: p1::P1_00<Input<Floating>>,
-    pub P1_01: p1::P1_01<Input<Floating>>,
-    pub P1_02: p1::P1_02<Input<Floating>>,
-    pub P1_03: p1::P1_03<Input<Floating>>,
-    pub P1_04: p1::P1_04<Input<Floating>>,
-    pub P1_05: p1::P1_05<Input<Floating>>,
-    pub P1_06: p1::P1_06<Input<Floating>>,
-    pub P1_07: p1::P1_07<Input<Floating>>,
-    pub P1_08: p1::P1_08<Input<Floating>>,
-    pub P1_09: p1::P1_09<Input<Floating>>,
-    pub P1_10: p1::P1_10<Input<Floating>>,
-    pub P1_11: p1::P1_11<Input<Floating>>,
-    pub P1_12: p1::P1_12<Input<Floating>>,
-    pub P1_13: p1::P1_13<Input<Floating>>,
-    pub P1_14: p1::P1_14<Input<Floating>>,
-    pub P1_15: p1::P1_15<Input<Floating>>,
+
+    pub P0_11: p0::P0_11<Input<Floating>>,
+    pub P0_12: p0::P0_12<Input<Floating>>,
+
+    pub P0_22: p0::P0_22<Input<Floating>>,
+    pub P0_23: p0::P0_23<Input<Floating>>,
+    pub P0_24: p0::P0_24<Input<Floating>>,
+    pub P0_25: p0::P0_25<Input<Floating>>,
+
+    pub P0_02: p0::P0_02<Input<Floating>>,
+    pub P0_26: p0::P0_26<Input<Floating>>,
+    pub P0_27: p0::P0_27<Input<Floating>>,
 }
 
 
-/// The LEDs on the nRF52840-DK board
+/// The LEDs on the nRF52-DK board
 pub struct Leds {
-    /// nRF52840-DK: LED1, nRF52: P0.30
+    /// nRF52-DK: LED1, nRF52: P0.17
     pub led_1: Led,
 
-    /// nRF52840-DK: LED2, nRF52: P0.31
+    /// nRF52-DK: LED2, nRF52: P0.18
     pub led_2: Led,
 
-    /// nRF52840-DK: LED3, nRF52: P0.22
+    /// nRF52-DK: LED3, nRF52: P0.19
     pub led_3: Led,
 
-    /// nRF52840-DK: LED4, nRF52: P0.14
+    /// nRF52-DK: LED4, nRF52: P0.20
     pub led_4: Led,
 }
 
-/// An LED on the nRF52840-DK board
+/// An LED on the nRF52-DK board
 pub struct Led(Pin<Output<PushPull>>);
 
 impl Led {
@@ -541,22 +492,22 @@ impl Led {
     }
 }
 
-/// The LEDs on the nRF52840-DK board
+/// The Buttons on the nRF52-DK board
 pub struct Buttons {
-    /// nRF52840-DK: Button 1, nRF52: P0.30
+    /// nRF52-DK: Button 1, nRF52: P0.13
     pub button_1: Button,
 
-    /// nRF52840-DK: Button 2, nRF52: P0.31
+    /// nRF52-DK: Button 2, nRF52: P0.14
     pub button_2: Button,
 
-    /// nRF52840-DK: Button 3, nRF52: P0.22
+    /// nRF52-DK: Button 3, nRF52: P0.15
     pub button_3: Button,
 
-    /// nRF52840-DK: Button 4, nRF52: P0.14
+    /// nRF52-DK: Button 4, nRF52: P0.16
     pub button_4: Button,
 }
 
-/// An LED on the nRF52840-DK board
+/// A Button on the nRF52-DK board
 pub struct Button(Pin<Input<PullUp>>);
 
 impl Button {
@@ -565,11 +516,11 @@ impl Button {
     }
 }
 
-/// The LEDs on the nRF52840-DK board
+/// The NFC pins on the nRF52-DK board
 pub struct NFC {
-    /// nRF52840-DK: LED1, nRF52: P0.30
+    /// nRF52-DK: NFC1, nRF52: P0.09
     pub nfc_1: p0::P0_09<Input<Floating>>,
 
-    /// nRF52840-DK: LED2, nRF52: P0.31
+    /// nRF52-DK: NFC2, nRF52: P0.10
     pub nfc_2: p0::P0_10<Input<Floating>>,
 }
