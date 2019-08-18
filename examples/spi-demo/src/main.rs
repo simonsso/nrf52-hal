@@ -106,11 +106,12 @@ fn main() -> ! {
 
     // Wrap interface in embedded-hal-spy to access embedded_hal traits
     let mut snoop = RefCell::new(Vec::<u8>::with_capacity(128));
+    let mut ledsnoop = RefCell::new(Vec::<u8>::with_capacity(128));
 
-    &snoop.borrow_mut().push(0x53);
-    &snoop.borrow_mut().push(0x53);
-    &snoop.borrow_mut().push(0x53);
-    &snoop.borrow_mut().push(0x53);
+    &ledsnoop.borrow_mut().push(0x53);
+    &ledsnoop.borrow_mut().push(0x53);
+    &ledsnoop.borrow_mut().push(0x53);
+    &ledsnoop.borrow_mut().push(0x53);
 
     let mut eh_spi = embedded_hal_spy::new(spi, |x| {
         match x {
@@ -127,6 +128,20 @@ fn main() -> ! {
         }
     });
 
+    let mut led1 = embedded_hal_spy::new(led1, |x| {
+        match x {
+            embedded_hal_spy::DataWord::Byte(b) => {
+                    &ledsnoop.borrow_mut().push(b | 0xf0);
+            }
+            _ =>{ &ledsnoop.borrow_mut().push(0x58);}
+        }
+    });
+    led1.set_low();
+    led1.set_high();
+    led1.set_low();
+    led1.set_high();
+    led1.set_low();
+    led1.set_high();
     use embedded_hal::blocking::spi::Write;
     match eh_spi.write(reference_data) {
         Ok(_) => {}

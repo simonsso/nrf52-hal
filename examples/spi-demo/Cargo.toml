@@ -9,7 +9,7 @@ cortex-m-rt = "0.6.10"
 alloc-cortex-m = "0.3.5"
 cortex-m = "0.5.8"
 panic-halt = "0.2.0"
-embedded-hal-spy = {git="https://github.com/simonsso/embedded_hal_spy.git" , branch="feature_embedded_hal_v2_traits"}
+embedded-hal-spy = {git="https://github.com/simonsso/embedded_hal_spy.git" , branch="master"}
 
 [dependencies.embedded-hal]
 features = ["unproven"]
