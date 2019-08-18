@@ -1,12 +1,15 @@
 #![no_std]
 #![no_main]
-
+// #![feature(alloc)]
+// #![feature(global_allocator)]
+#![feature(lang_items)]
 extern crate cortex_m_rt as rt; // v0.5.x
 
 extern crate embedded_hal_spy;
 extern crate nrf52832_hal;
 extern crate panic_halt;
 use embedded_hal::blocking::spi::*;
+
 
 use cortex_m_rt::entry;
 use embedded_hal::digital::OutputPin;
@@ -15,7 +18,16 @@ use nrf52832_hal::gpio::p0::*;
 use nrf52832_hal::gpio::Level;
 use nrf52832_hal::gpio::*;
 use nrf52832_hal::spim::Spim;
+use core::cell::RefCell;
 
+extern crate alloc;
+use alloc::vec::Vec;
+extern crate alloc_cortex_m;
+use alloc_cortex_m::CortexMHeap;
+use core::alloc::Layout;
+
+#[global_allocator]
+static ALLOCATOR: CortexMHeap = CortexMHeap::empty();
 /// SPIM demonstation code.
 /// connect a resistor between pin 22 and 23 on to feed MOSI direct back to MISO
 ///
@@ -23,6 +35,8 @@ use nrf52832_hal::spim::Spim;
 /// one or more Led will remain off.
 #[entry]
 fn main() -> ! {
+
+    unsafe { ALLOCATOR.init(cortex_m_rt::heap_start() as usize, 4096 as usize) }
     let p = nrf52832_hal::nrf52832_pac::Peripherals::take().unwrap();
     let port0 = p0::Parts::new(p.P0);
 
@@ -91,7 +105,28 @@ fn main() -> ! {
     }
 
     // Wrap interface in embedded-hal-spy to access embedded_hal traits
-    let mut eh_spi = embedded_hal_spy::new(spi, |_| {});
+    let mut snoop = RefCell::new(Vec::<u8>::with_capacity(128));
+
+    &snoop.borrow_mut().push(0x53);
+    &snoop.borrow_mut().push(0x53);
+    &snoop.borrow_mut().push(0x53);
+    &snoop.borrow_mut().push(0x53);
+
+    let mut eh_spi = embedded_hal_spy::new(spi, |x| {
+        match x {
+            embedded_hal_spy::DataWord::Byte(b) => {
+                    &snoop.borrow_mut().push(b);
+            }
+            embedded_hal_spy::DataWord::First =>{
+                   b"NEW:".into_iter().for_each(|b|{&snoop.borrow_mut().push(b+0);});
+            }
+            embedded_hal_spy::DataWord::Last =>{
+                   b":XXX".into_iter().for_each(|b|{&snoop.borrow_mut().push(b+0);});
+            }
+            _ =>{;}
+        }
+    });
+
     use embedded_hal::blocking::spi::Write;
     match eh_spi.write(reference_data) {
         Ok(_) => {}
@@ -117,6 +152,13 @@ fn main() -> ! {
         }
     }
 
+    let eh_spi = 0;
+    &snoop.borrow_mut().push(0x73);
+    &snoop.borrow_mut().push(0x73);
+    let mut snoop = snoop.get_mut();
+    snoop.push(0x73);
+    snoop.push(0x73);
+
     if tests_ok {
         led1.set_low();
         led2.set_low();
@@ -125,4 +167,15 @@ fn main() -> ! {
     }
 
     loop {}
+}
+
+// required: define how Out Of Memory (OOM) conditions should be handled
+// *if* no other crate has already defined `oom`
+#[lang = "oom"]
+#[no_mangle]
+
+pub fn rust_oom(_layout: Layout) -> ! {
+   // trap here for the debuger to find
+   loop {
+   }
 }
