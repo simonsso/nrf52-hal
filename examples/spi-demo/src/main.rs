@@ -12,7 +12,8 @@ use embedded_hal::blocking::spi::*;
 
 
 use cortex_m_rt::entry;
-use embedded_hal::digital::OutputPin;
+//use embedded_hal::digital::OutputPin;
+use embedded_hal::digital::v2::OutputPin;
 use nrf52832_hal::gpio;
 use nrf52832_hal::gpio::p0::*;
 use nrf52832_hal::gpio::Level;

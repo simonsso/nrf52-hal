@@ -9,11 +9,11 @@ cortex-m-rt = "0.6.10"
 alloc-cortex-m = "0.3.5"
 cortex-m = "0.5.8"
 panic-halt = "0.2.0"
-embedded-hal-spy = {git="https://github.com/simonsso/embedded_hal_spy.git" , branch="master"}
+embedded-hal-spy = {path="/home/simson/work/baremetal2/embedded_hal_spy" } # features=["embedded_hal_digital_io_legacy_v1"] }
 
 [dependencies.embedded-hal]
 features = ["unproven"]
-version = "0.2"
+version = "0.2.3"
 
 [dependencies.nrf52832-hal]
 version = "0.8.0"
